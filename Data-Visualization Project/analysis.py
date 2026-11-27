@@ -42,29 +42,47 @@ DASHBOARD_HTML = BASE / "dashboard.html"
 CHART_DIR.mkdir(exist_ok=True)
 EXPORT_DIR.mkdir(exist_ok=True)
 
-# Colorblind-safe Okabe-Ito palette (consistent across every chart)
+# ----------------------------------------------------------------- COLOR SYSTEM
+# Aligned with Week 3-4 Colour Theory & Week 7 Accessibility:
+#   - Distinct Hue (Okabe-Ito, colorblind-safe) exclusively for Attack Type
+#   - Monochromatic Light-to-Dark Purple (ColorBrewer Purples) exclusively for ordered Severity Level
+#   - Saturation hierarchy for Action Taken (low-saturation Logged, vivid focal Ignored)
+#   - Neutral Slate exclusively for aggregate "All Events" totals (never collides with DDoS blue)
 ATTACK_ORDER = ["DDoS", "Malware", "Intrusion"]
 ATTACK_COLORS = {
     "DDoS": "#0072B2",       # Okabe-Ito Blue
     "Malware": "#D55E00",    # Okabe-Ito Vermilion
     "Intrusion": "#009E73",  # Okabe-Ito Bluish Green
 }
+ATTACK_DASH = {
+    "DDoS": "solid",
+    "Malware": "dash",
+    "Intrusion": "dot",
+}
+ATTACK_MPL_LS = {
+    "DDoS": "-",
+    "Malware": "--",
+    "Intrusion": "-.",
+}
 
-# Single ordered light-to-dark scale for Severity Level
+# Monochromatic light-to-dark scale for ordered Severity Level (ColorBrewer Purples)
 SEV_ORDER = ["Low", "Medium", "High"]
 SEV_COLORS = {
-    "Low": "#BDD7E7",
-    "Medium": "#6BAED6",
-    "High": "#08519C",
+    "Low": "#DADAEB",
+    "Medium": "#9E9AC8",
+    "High": "#54278F",
 }
 
-# Action Taken colors (Okabe-Ito)
+# Action Taken: deliberate saturation & semantic contrast (no collision with Attack Type)
 ACTION_ORDER = ["Blocked", "Logged", "Ignored"]
 ACTION_COLORS = {
-    "Blocked": "#009E73",
-    "Logged": "#E69F00",
-    "Ignored": "#CC79A7",
+    "Blocked": "#2A7B88",   # Deep Teal (defended / positive)
+    "Logged": "#94A3B8",    # Low-saturation Slate Gray (passive / background)
+    "Ignored": "#C0264B",   # Vivid Crimson-Magenta (focal alert for Key Finding)
 }
+
+NEUTRAL_BAR = "#475569"     # Neutral Slate for aggregate "All Events" charts
+KDE_COLOR = "#B45309"       # Warm Amber-Brown for KDE curve (distinct from Malware)
 
 DAY_ORDER = [
     "Monday", "Tuesday", "Wednesday", "Thursday",
@@ -234,15 +252,17 @@ def save_plotly(fig: go.Figure, name: str) -> None:
 
 
 def build_plotly_charts(clean: pd.DataFrame) -> None:
-    # 1. Monthly attacks by type (y-axis starts at 0 for Lie Factor = 1; annotated partial Oct 2023)
+    # 1. Monthly attacks by type (y-axis starts at 0 for Lie Factor = 1; distinct line styles + hue)
     monthly = clean.groupby(["Month", "Attack Type"]).size().reset_index(name="Events")
     fig = px.line(
         monthly,
         x="Month",
         y="Events",
         color="Attack Type",
+        line_dash="Attack Type",
         category_orders={"Attack Type": ATTACK_ORDER},
         color_discrete_map=ATTACK_COLORS,
+        line_dash_map=ATTACK_DASH,
         labels={"Month": "Month (Jan 2020 – Oct 2023)", "Events": "Attack Events (count)"},
         title="Monthly attacks stay steady (~280–320/type) until partial Oct 2023",
     )
@@ -406,7 +426,7 @@ def build_plotly_charts(clean: pd.DataFrame) -> None:
     )
     save_plotly(style_plotly(fig, show_legend=True), "07_action_by_severity")
 
-    # 8. Geography: events per state
+    # 8. Geography: events per state (neutral slate so it does not collide with DDoS blue)
     state = clean["State"].value_counts().reset_index()
     state.columns = ["State", "Events"]
     fig = px.bar(
@@ -414,7 +434,7 @@ def build_plotly_charts(clean: pd.DataFrame) -> None:
         x="Events",
         y="State",
         orientation="h",
-        color_discrete_sequence=["#0072B2"],
+        color_discrete_sequence=[NEUTRAL_BAR],
         labels={"Events": "Attack Events (count)", "State": "Indian State"},
         title="Events span 28 Indian states evenly (1,373 to 1,498 events per state)",
     )
@@ -495,8 +515,8 @@ def build_plotly_charts(clean: pd.DataFrame) -> None:
             y=counts,
             width=4.6,
             name="Histogram (bin width = 5)",
-            marker_color="#0072B2",
-            opacity=0.75,
+            marker_color=NEUTRAL_BAR,
+            opacity=0.72,
         )
     )
     fig.add_trace(
@@ -505,7 +525,7 @@ def build_plotly_charts(clean: pd.DataFrame) -> None:
             y=kde_scaled,
             mode="lines",
             name="Kernel Density Estimate (KDE)",
-            line=dict(color="#D55E00", width=2.8),
+            line=dict(color=KDE_COLOR, width=2.8),
         )
     )
     fig.add_vline(
@@ -568,11 +588,18 @@ def build_static_exports(clean: pd.DataFrame) -> None:
         meta["Author"] = "Team 04 — Data Visualization"
         meta["CreationDate"] = datetime.datetime.today()
 
-        # 1. Monthly trend (y-axis starts at 0 for Lie Factor = 1; legend outside top)
+        # 1. Monthly trend (y-axis starts at 0 for Lie Factor = 1; distinct line styles + hue)
         monthly = clean.groupby(["Month", "Attack Type"]).size().unstack(fill_value=0)[ATTACK_ORDER]
         fig, ax = plt.subplots(figsize=(10.5, 5.0))
         for at in ATTACK_ORDER:
-            ax.plot(monthly.index, monthly[at], label=at, color=ATTACK_COLORS[at], linewidth=2.1)
+            ax.plot(
+                monthly.index,
+                monthly[at],
+                label=at,
+                color=ATTACK_COLORS[at],
+                linestyle=ATTACK_MPL_LS[at],
+                linewidth=2.1,
+            )
         ax.axvspan(pd.Timestamp("2023-09-20"), pd.Timestamp("2023-10-15"), color="#E69F00", alpha=0.22)
         ax.annotate(
             "Partial Oct 2023\n(ends Oct 11, 296 rows)",
@@ -751,10 +778,10 @@ def build_static_exports(clean: pd.DataFrame) -> None:
         ax.legend(frameon=False, ncol=3, loc="lower right", bbox_to_anchor=(1.0, 1.01))
         save_fig(fig, "07_action_by_severity", pdf)
 
-        # 8. Events by Indian state
+        # 8. Events by Indian state (neutral slate, no collision with DDoS blue)
         state = clean["State"].value_counts().sort_values(ascending=True)
         fig, ax = plt.subplots(figsize=(9.2, 8.6))
-        ax.barh(state.index, state.values, color="#0072B2", height=0.7)
+        ax.barh(state.index, state.values, color=NEUTRAL_BAR, height=0.7)
         ax.set_xlim(0, state.max() * 1.08)
         ax.set_xlabel("Attack Events (count)")
         ax.set_ylabel("Indian State")
@@ -842,8 +869,8 @@ def build_static_exports(clean: pd.DataFrame) -> None:
         kde_scaled = kde_density * len(scores) * 5.0
 
         fig, ax = plt.subplots(figsize=(10.0, 5.0))
-        ax.bar(centers, counts, width=4.5, color="#0072B2", alpha=0.75, edgecolor="white", label="Histogram (bin width = 5)")
-        ax.plot(grid, kde_scaled, color="#D55E00", linewidth=2.5, label="Kernel Density Estimate (KDE)")
+        ax.bar(centers, counts, width=4.5, color=NEUTRAL_BAR, alpha=0.72, edgecolor="white", label="Histogram (bin width = 5)")
+        ax.plot(grid, kde_scaled, color=KDE_COLOR, linewidth=2.5, label="Kernel Density Estimate (KDE)")
         ax.axvline(scores.mean(), color="#111827", linestyle="--", linewidth=1.6, label=f"Mean = {scores.mean():.1f}")
         ax.annotate(
             "Flat (Uniform) distribution\n~2,000 events per 5-point bin\nNo outliers outside 0–100",
@@ -1036,10 +1063,10 @@ def build_interactive_dashboard(clean: pd.DataFrame) -> None:
     </div>
 
     <div class="kpis">
-      <div class="kpi"><div class="kpi-label">Total Events</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub" id="kpi-total-sub">of 40,000 records</div></div>
-      <div class="kpi" style="border-top-color:#009E73;"><div class="kpi-label">Percent Blocked</div><div class="kpi-value" id="kpi-blocked">—</div><div class="kpi-sub">Action Taken = Blocked</div></div>
-      <div class="kpi" style="border-top-color:#08519C;"><div class="kpi-label">Percent High Severity</div><div class="kpi-value" id="kpi-high">—</div><div class="kpi-sub">Severity Level = High</div></div>
-      <div class="kpi" style="border-top-color:#D55E00;"><div class="kpi-label">Mean Anomaly Score</div><div class="kpi-value" id="kpi-anom">—</div><div class="kpi-sub">0–100 scale</div></div>
+      <div class="kpi" style="border-top-color:#475569;"><div class="kpi-label">Total Events</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-sub" id="kpi-total-sub">of 40,000 records</div></div>
+      <div class="kpi" style="border-top-color:#2A7B88;"><div class="kpi-label">Percent Blocked</div><div class="kpi-value" id="kpi-blocked">—</div><div class="kpi-sub">Action Taken = Blocked</div></div>
+      <div class="kpi" style="border-top-color:#54278F;"><div class="kpi-label">Percent High Severity</div><div class="kpi-value" id="kpi-high">—</div><div class="kpi-sub">Severity Level = High</div></div>
+      <div class="kpi" style="border-top-color:#B45309;"><div class="kpi-label">Mean Anomaly Score</div><div class="kpi-value" id="kpi-anom">—</div><div class="kpi-sub">0–100 scale</div></div>
     </div>
 
     <div class="section-title">1. Time Trends &amp; Peak Activity</div>
@@ -1152,13 +1179,14 @@ def build_interactive_dashboard(clean: pd.DataFrame) -> None:
         M.attacks.some((_, a) => monthly[a][i] > 0)
       );
       const xMonths = activeMonthIdx.map(i => M.months[i]);
+      const dashStyles = ["solid", "dash", "dot"];
       const monthlyTraces = M.attacks.map((at, a) => ({{
         x: xMonths,
         y: activeMonthIdx.map(i => monthly[a][i]),
         name: at,
         type: "scatter",
         mode: "lines",
-        line: {{ color: M.attackColors[at], width: 2.2 }},
+        line: {{ color: M.attackColors[at], width: 2.2, dash: dashStyles[a] }},
       }}));
       Plotly.react("c-monthly", monthlyTraces, {{
         ...BASE_LAYOUT,
@@ -1298,11 +1326,11 @@ def build_interactive_dashboard(clean: pd.DataFrame) -> None:
         yaxis: {{ title: "Signal Present (%)", range: [0, 62], ticksuffix: "%" }},
       }}, {{ responsive: true }});
 
-      // 10. Geography: Events by Indian State
+      // 10. Geography: Events by Indian State (neutral slate, no collision with DDoS blue)
       const stPairs = M.states.map((s, i) => [s, byState[i]]).sort((a, b) => a[1] - b[1]);
       Plotly.react("c-geo", [{{
         y: stPairs.map(p => p[0]), x: stPairs.map(p => p[1]),
-        type: "bar", orientation: "h", marker: {{ color: "#0072B2" }},
+        type: "bar", orientation: "h", marker: {{ color: "#475569" }},
       }}], {{
         ...BASE_LAYOUT,
         showlegend: false,
