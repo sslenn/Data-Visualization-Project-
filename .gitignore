@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# OS & Office temp files
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*.docx
+~$*.xlsx
+~$*.pptx
